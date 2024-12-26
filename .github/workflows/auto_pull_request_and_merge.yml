@@ -1,0 +1,66 @@
+name: Auto Pull Request and Merge
+
+on:
+  #push:
+  #  branches:
+  #    - one-victus/dev
+  push:
+    branches:
+      - one-victus/dev
+
+jobs:
+  auto-pr-merge:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Configurar el repositorio
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    # - name: Set up GitHub CLI
+    #  run: |
+    #    sudo apt-get install -y gh
+    #    gh auth login --with-token <<< "$GITHUB_TOKEN"
+
+    # 2. Validar commits pendientes
+    - name: Validate Pending Commits
+      run: |
+        if [ "$(git rev-list --count origin/main..HEAD)" -eq 0 ]; then
+          echo "No commits to merge. Exiting."
+          exit 0
+        fi
+
+    # 3. Crear Pull Request
+    - name: Create Pull Request
+      id: create_pr
+      run: |
+        if gh pr list --base main --head one-victus/dev --json number --jq '.[].number' | grep -q '.'; then
+          echo "Pull Request already exists."
+          exit 0
+        else
+          gh pr create --title "Auto PR: one-victus/dev to main" \
+                       --body "This PR was created automatically by GitHub Actions." \
+                       --base main \
+                       --head one-victus/dev
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # 4. Hacer Merge del PR
+    - name: Merge Pull Request
+      run: |
+        gh pr merge $(gh pr list --state open --json number --jq '.[0].number') --merge
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # 5. Validar y limpiar ramas remotas
+    - name: Validate and Cleanup Branches
+      run: |
+        if git show-ref --verify --quiet refs/remotes/origin/one-victus/dev; then
+          git push origin --delete one-victus/dev
+          echo "Branch 'one-victus/dev' deleted."
+        else
+          echo "Branch 'one-victus/dev' does not exist. Skipping deletion."
+        fi
